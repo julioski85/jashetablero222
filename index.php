@@ -26,6 +26,9 @@ $yesterday  = (clone $today)->modify('-1 day');
 $year  = (int)$now->format('Y');
 $month = (int)$now->format('n');
 
+$startPrevMonth = (clone $now)->modify('first day of last month')->setTime(0, 0, 0);
+$endPrevMonth   = (clone $now)->modify('first day of this month')->setTime(0, 0, 0);
+
 // Regla especial:
 // - Si el mes actual ES FEBRERO: contar desde Feb 10
 // - Si NO: contar mes completo (día 1)
@@ -135,11 +138,66 @@ $totalsMonth = fetchOne($pdo, "
     AND date >= :start AND date < :end
 ", $paramsMonth);
 
+$discountsMonth = fetchOne($pdo, "
+  SELECT COALESCE(SUM(total_discount),0) AS total_discount
+  FROM sma_sales
+  WHERE biller IN (:b0,:b1)
+    AND date >= :start AND date < :end
+", $paramsMonth);
+
+$expensesMonth = fetchOne($pdo, "
+  SELECT COALESCE(SUM(amount),0) AS total_expenses
+  FROM sma_expenses
+  WHERE date >= :start AND date < :end
+", [
+  ':start' => $startMonth->format('Y-m-d H:i:s'),
+  ':end'   => $endLive->format('Y-m-d H:i:s'),
+]);
+
 $totalMesAll       = (float)($totalsMonth['total_all'] ?? 0);
 $totalMesRecepcion = (float)($totalsMonth['total_recepcion'] ?? 0);
 $totalMesCocina    = (float)($totalsMonth['total_cocina'] ?? 0);
 $txMesAll          = (int)($totalsMonth['tx_all'] ?? 0);
 $ticketPromMes     = ($txMesAll > 0) ? ($totalMesAll / $txMesAll) : 0;
+$descuentosMes     = (float)($discountsMonth['total_discount'] ?? 0);
+$gastosMes         = (float)($expensesMonth['total_expenses'] ?? 0);
+
+$paramsPrevMonth = [
+  ':start' => $startPrevMonth->format('Y-m-d H:i:s'),
+  ':end'   => $endPrevMonth->format('Y-m-d H:i:s'),
+  ':b0'    => $billerRecepcion,
+  ':b1'    => $billerCocina,
+];
+
+$totalsPrevMonth = fetchOne($pdo, "
+  SELECT
+    COALESCE(SUM(grand_total),0) AS total_all,
+    COUNT(*) AS tx_all
+  FROM sma_sales
+  WHERE biller IN (:b0,:b1)
+    AND date >= :start AND date < :end
+", $paramsPrevMonth);
+
+$discountsPrevMonth = fetchOne($pdo, "
+  SELECT COALESCE(SUM(total_discount),0) AS total_discount
+  FROM sma_sales
+  WHERE biller IN (:b0,:b1)
+    AND date >= :start AND date < :end
+", $paramsPrevMonth);
+
+$expensesPrevMonth = fetchOne($pdo, "
+  SELECT COALESCE(SUM(amount),0) AS total_expenses
+  FROM sma_expenses
+  WHERE date >= :start AND date < :end
+", [
+  ':start' => $startPrevMonth->format('Y-m-d H:i:s'),
+  ':end'   => $endPrevMonth->format('Y-m-d H:i:s'),
+]);
+
+$ventasMesAnterior      = (float)($totalsPrevMonth['total_all'] ?? 0);
+$txMesAnterior          = (int)($totalsPrevMonth['tx_all'] ?? 0);
+$descuentosMesAnterior  = (float)($discountsPrevMonth['total_discount'] ?? 0);
+$gastosMesAnterior      = (float)($expensesPrevMonth['total_expenses'] ?? 0);
 
 // ===============================
 // Ventas HOY y AYER (totales del día)
@@ -161,10 +219,28 @@ $todayTotals = fetchOne($pdo, "
     AND date >= :start AND date < :end
 ", $paramsHoy);
 
+$todayDiscounts = fetchOne($pdo, "
+  SELECT COALESCE(SUM(total_discount),0) AS total_discount
+  FROM sma_sales
+  WHERE biller IN (:b0,:b1)
+    AND date >= :start AND date < :end
+", $paramsHoy);
+
+$todayExpenses = fetchOne($pdo, "
+  SELECT COALESCE(SUM(amount),0) AS total_expenses
+  FROM sma_expenses
+  WHERE date >= :start AND date < :end
+", [
+  ':start' => $today->format('Y-m-d H:i:s'),
+  ':end'   => $tomorrow->format('Y-m-d H:i:s'),
+]);
+
 $ventasHoyAll       = (float)($todayTotals['total_all'] ?? 0);
 $ventasHoyRecepcion = (float)($todayTotals['total_recepcion'] ?? 0);
 $ventasHoyCocina    = (float)($todayTotals['total_cocina'] ?? 0);
 $txHoy              = (int)($todayTotals['tx_all'] ?? 0);
+$descuentosHoy      = (float)($todayDiscounts['total_discount'] ?? 0);
+$gastosHoy          = (float)($todayExpenses['total_expenses'] ?? 0);
 
 $paramsAyer = [
   ':start' => $yesterday->format('Y-m-d H:i:s'),
@@ -183,10 +259,28 @@ $yesterdayTotals = fetchOne($pdo, "
     AND date >= :start AND date < :end
 ", $paramsAyer);
 
+$yesterdayDiscounts = fetchOne($pdo, "
+  SELECT COALESCE(SUM(total_discount),0) AS total_discount
+  FROM sma_sales
+  WHERE biller IN (:b0,:b1)
+    AND date >= :start AND date < :end
+", $paramsAyer);
+
+$yesterdayExpenses = fetchOne($pdo, "
+  SELECT COALESCE(SUM(amount),0) AS total_expenses
+  FROM sma_expenses
+  WHERE date >= :start AND date < :end
+", [
+  ':start' => $yesterday->format('Y-m-d H:i:s'),
+  ':end'   => $today->format('Y-m-d H:i:s'),
+]);
+
 $ventasAyerAll       = (float)($yesterdayTotals['total_all'] ?? 0);
 $ventasAyerRecepcion = (float)($yesterdayTotals['total_recepcion'] ?? 0);
 $ventasAyerCocina    = (float)($yesterdayTotals['total_cocina'] ?? 0);
 $txAyer              = (int)($yesterdayTotals['tx_all'] ?? 0);
+$descuentosAyer      = (float)($yesterdayDiscounts['total_discount'] ?? 0);
+$gastosAyer          = (float)($yesterdayExpenses['total_expenses'] ?? 0);
 
 // ===============================
 // Ventas por día (mes actual, inicio según regla)
@@ -196,6 +290,7 @@ $salesByDay = fetchAll($pdo, "
     DATE(date) AS day,
     COALESCE(SUM(CASE WHEN biller = :b0 THEN grand_total ELSE 0 END),0) AS recepcion_sales,
     COALESCE(SUM(CASE WHEN biller = :b1 THEN grand_total ELSE 0 END),0) AS cocina_sales,
+    COALESCE(SUM(total_discount),0) AS discounts,
     COALESCE(SUM(grand_total),0) AS total_sales,
     COUNT(*) AS tx_all
   FROM sma_sales
@@ -205,11 +300,25 @@ $salesByDay = fetchAll($pdo, "
   ORDER BY DATE(date) ASC
 ", $paramsMonth);
 
+$expensesByDay = fetchAll($pdo, "
+  SELECT
+    DATE(date) AS day,
+    COALESCE(SUM(amount),0) AS total_expenses
+  FROM sma_expenses
+  WHERE date >= :start AND date < :end
+  GROUP BY DATE(date)
+", [
+  ':start' => $startMonth->format('Y-m-d H:i:s'),
+  ':end'   => $endLive->format('Y-m-d H:i:s'),
+]);
+
 // Mapas diarios
 $mapRecepcion = [];
 $mapCocina = [];
 $mapTotal  = [];
 $mapTx     = [];
+$mapDiscounts = [];
+$mapExpenses = [];
 
 foreach ($salesByDay as $r) {
   $d = $r['day'];
@@ -217,6 +326,12 @@ foreach ($salesByDay as $r) {
   $mapCocina[$d]    = (float)$r['cocina_sales'];
   $mapTotal[$d]     = (float)$r['total_sales'];
   $mapTx[$d]        = (int)$r['tx_all'];
+  $mapDiscounts[$d] = (float)$r['discounts'];
+}
+
+foreach ($expensesByDay as $r) {
+  $d = $r['day'];
+  $mapExpenses[$d] = (float)$r['total_expenses'];
 }
 
 // Series (gráfica en orden ascendente)
@@ -424,6 +539,7 @@ usort($stockRows, function($a,$b) use ($rank){
     }
     .kpis2{ grid-template-columns: repeat(2, 1fr); }
     .kpis3{ grid-template-columns: repeat(3, 1fr); }
+    .kpis4{ grid-template-columns: repeat(4, 1fr); }
 
     /* Caja llamativa */
     .kpiHot{
@@ -553,7 +669,7 @@ usort($stockRows, function($a,$b) use ($rank){
     @media (max-width: 980px){
       .grid{ padding:10px 12px 22px; gap:10px; }
       .card{ padding:12px; border-radius:14px; }
-      .kpis2, .kpis3{ grid-template-columns: 1fr; }
+      .kpis2, .kpis3, .kpis4{ grid-template-columns: 1fr; }
       canvas{ height:240px !important; }
       .tableScroll{ max-height:320px; }
     }
@@ -612,6 +728,7 @@ usort($stockRows, function($a,$b) use ($rank){
         <div class="value"><?= pesos($ventasHoyAll) ?></div>
         <div class="subline">
           Recepción: <strong><?= pesos($ventasHoyRecepcion) ?></strong> · Cocina: <strong><?= pesos($ventasHoyCocina) ?></strong><br>
+          Descuentos: <strong><?= pesos($descuentosHoy) ?></strong> · Gastos: <strong><?= pesos($gastosHoy) ?></strong><br>
           Tx: <strong><?= num($txHoy) ?></strong>
         </div>
       </div>
@@ -621,17 +738,23 @@ usort($stockRows, function($a,$b) use ($rank){
         <div class="value"><?= pesos($ventasAyerAll) ?></div>
         <div class="subline">
           Recepción: <strong><?= pesos($ventasAyerRecepcion) ?></strong> · Cocina: <strong><?= pesos($ventasAyerCocina) ?></strong><br>
+          Descuentos: <strong><?= pesos($descuentosAyer) ?></strong> · Gastos: <strong><?= pesos($gastosAyer) ?></strong><br>
           Tx: <strong><?= num($txAyer) ?></strong>
         </div>
       </div>
     </div>
 
-    <!-- TOTAL MES: 3 KPIS -->
-    <div class="kpis kpis3">
+    <!-- TOTAL MES: 4 KPIS -->
+    <div class="kpis kpis4">
       <div class="kpi">
         <div class="label">Total mes (Recepción + Cocina)</div>
         <div class="value"><?= pesos($totalMesAll) ?></div>
-        <div class="hint">Tx: <strong><?= num($txMesAll) ?></strong> · Ticket prom: <strong><?= pesos($ticketPromMes) ?></strong></div>
+        <div class="hint">Descuentos: <strong><?= pesos($descuentosMes) ?></strong> · Gastos: <strong><?= pesos($gastosMes) ?></strong></div>
+      </div>
+      <div class="kpi">
+        <div class="label">Mes anterior</div>
+        <div class="value"><?= pesos($ventasMesAnterior) ?></div>
+        <div class="hint">Descuentos: <strong><?= pesos($descuentosMesAnterior) ?></strong> · Gastos: <strong><?= pesos($gastosMesAnterior) ?></strong> · Tx: <strong><?= num($txMesAnterior) ?></strong></div>
       </div>
       <div class="kpi">
         <div class="label">Recepción (mes)</div>
@@ -666,6 +789,8 @@ usort($stockRows, function($a,$b) use ($rank){
             <th class="right">Recepción</th>
             <th class="right">Cocina</th>
             <th class="right">Total</th>
+            <th class="right">Descuentos</th>
+            <th class="right">Gastos</th>
             <th class="right">Tx</th>
           </tr>
         </thead>
@@ -677,6 +802,8 @@ usort($stockRows, function($a,$b) use ($rank){
               $r = $mapRecepcion[$d] ?? 0.0;
               $c = $mapCocina[$d] ?? 0.0;
               $t = $mapTotal[$d] ?? 0.0;
+              $dd = $mapDiscounts[$d] ?? 0.0;
+              $gg = $mapExpenses[$d] ?? 0.0;
               $x = $mapTx[$d] ?? 0;
           ?>
             <tr>
@@ -684,6 +811,8 @@ usort($stockRows, function($a,$b) use ($rank){
               <td class="right"><?= pesos($r) ?></td>
               <td class="right"><?= pesos($c) ?></td>
               <td class="right"><strong><?= pesos($t) ?></strong></td>
+              <td class="right"><?= pesos($dd) ?></td>
+              <td class="right"><?= pesos($gg) ?></td>
               <td class="right"><?= num($x) ?></td>
             </tr>
           <?php
